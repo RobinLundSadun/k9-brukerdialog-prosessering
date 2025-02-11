@@ -7,11 +7,15 @@ import no.nav.brukerdialog.common.FeltMap
 import no.nav.brukerdialog.common.PdfConfig
 import no.nav.brukerdialog.common.VerdilisteElement
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.Perioder
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Arbeidsforhold
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Arbeidsgiver
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.FlereSokereSvar
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Frilans
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Næringstype
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.OpptjeningIUtlandet
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.PilsSøknadMottatt
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Pleietrengende
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.SelvstendigNæringsdrivende
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.capitalizeName
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.grupperSammenhengendeDatoerPerUkeTypet
 import no.nav.brukerdialog.meldinger.pleiepengersyktbarn.domene.felles.Periode
@@ -41,7 +45,10 @@ object PilsSøknadPdfDataMapper {
         val søker = mapSøker(søknad.søker)
         val pleietrengende = mapPleietrengende(søknad.pleietrengende, søknad.flereSokere)
         val perioder = mapPerioder(søknad)
-        val mapArbeidsgiver = mapArbeidsGivere(søknad.arbeidsgivere, periode)
+        val arbeidsgiver = mapArbeidsGivere(søknad.arbeidsgivere, periode)
+        val frilans = mapFrilans(søknad.frilans)
+        val selvstendigNaeringsdrivende = mapSelvstendigNæringsdrivende(søknad.selvstendigNæringsdrivende)
+        val opptjeningIUtlandet = mapOpptjeningIUtlandet(søknad.opptjeningIUtlandet)
 
         return FeltMap(
             label = ytelseTittel,
@@ -51,6 +58,10 @@ object PilsSøknadPdfDataMapper {
                     søker,
                     pleietrengende,
                     perioder,
+                    arbeidsgiver,
+                    frilans,
+                    selvstendigNaeringsdrivende,
+                    opptjeningIUtlandet,
                 ),
             pdfConfig = PdfConfig(harInnholdsfortegnelse = true, "nb"),
         )
@@ -233,16 +244,167 @@ object PilsSøknadPdfDataMapper {
             else -> VerdilisteElement(label = "Er ikke frilanser i perioden det søkes om.")
         }
 
-    fun mapSelvstendigNæringsdrivende(): VerdilisteElement =
-        VerdilisteElement(
-            "Selvstendig næringsdrivende",
-            verdiliste =
-                listOf(
-                    VerdilisteElement(
-                        label = "Er ikke selvstendig næringsdrivende i perioden det søkes om.",
+    fun mapSelvstendigNæringsdrivende(selvstendigNæringsdrivende: SelvstendigNæringsdrivende?): VerdilisteElement? =
+        selvstendigNæringsdrivende?.run {
+            VerdilisteElement(
+                "Selvstendig næringsdrivende",
+                verdiliste =
+                    listOfNotNull(
+                        lagVerdiElement("Er du selvstendig næringsdrivende i perioden?", true),
+                        lagVerdiElement(
+                            "Har du flere virksomheter?",
+                            selvstendigNæringsdrivende.virksomhet.harFlereAktiveVirksomheter,
+                        ),
+                        lagVerdiElement(
+                            "Hvor mange timer jobber du normalt per uke?",
+                            selvstendigNæringsdrivende.arbeidsforhold?.jobberNormaltTimer,
+                            selvstendigNæringsdrivende.arbeidsforhold,
+                        ),
+                        VerdilisteElement(
+                            label = "Næringsvirksomhet som du har lagt inn",
+                            visningsVariant = "PUNKTLISTE",
+                            verdiliste =
+                                listOfNotNull(
+                                    lagVerdiElement(
+                                        "Navn på virksomheten: ",
+                                        selvstendigNæringsdrivende.virksomhet.navnPåVirksomheten,
+                                    ),
+                                    lagVerdiElement(
+                                        "Næringstype: ",
+                                        selvstendigNæringsdrivende.virksomhet.næringstype,
+                                    ),
+                                    if (selvstendigNæringsdrivende.virksomhet.registrertINorge) {
+                                        lagVerdiElement(
+                                            "Registrert i Norge: ",
+                                            "Organisasjonsnummer:  ${selvstendigNæringsdrivende.virksomhet.organisasjonsnummer}",
+                                        )
+                                    } else {
+                                        lagVerdiElement(
+                                            "Registrert i Land: ",
+                                            selvstendigNæringsdrivende.virksomhet.registrertIUtlandet?.landnavn + " " +
+                                                selvstendigNæringsdrivende.virksomhet.registrertIUtlandet?.landkode,
+                                            selvstendigNæringsdrivende.virksomhet.registrertIUtlandet,
+                                        )
+                                    },
+                                    lagVerdiElement(
+                                        "Startet: ",
+                                        DATE_TIME_FORMATTER.format(selvstendigNæringsdrivende.virksomhet.fraOgMed) + " - " +
+                                            (
+                                                selvstendigNæringsdrivende.virksomhet.tilOgMed?.let {
+                                                    DATE_TIME_FORMATTER.format(
+                                                        it,
+                                                    )
+                                                }
+                                                    ?: ""
+                                            ),
+                                    ),
+                                    lagVerdiElement(
+                                        "Avsluttet",
+                                        selvstendigNæringsdrivende.virksomhet.tilOgMed,
+                                        selvstendigNæringsdrivende.virksomhet.tilOgMed,
+                                    ),
+                                    VerdilisteElement(
+                                        label = "Næringstype: " + selvstendigNæringsdrivende.virksomhet.næringstype.beskrivelse,
+                                        verdi =
+                                            if (selvstendigNæringsdrivende.virksomhet.næringstype == Næringstype.FISKE) {
+                                                if (selvstendigNæringsdrivende.virksomhet.fiskerErPåBladB) {
+                                                    "(blad B)"
+                                                } else {
+                                                    "(ikke blad B)"
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                    ),
+                                ),
+                        ),
+                        lagVerdiElement(
+                            "Har du hatt varig endring i virksomheten?",
+                            selvstendigNæringsdrivende.virksomhet.varigEndring,
+                        ),
+                        lagVerdiElement(
+                            "Hva har du hatt i næringsresultat før skatt de siste 12 månedene?",
+                            selvstendigNæringsdrivende.virksomhet.næringsinntekt,
+                            selvstendigNæringsdrivende.virksomhet.næringsinntekt,
+                        ),
+                        selvstendigNæringsdrivende.virksomhet.varigEndring?.let { varigEndring ->
+                            lagVerdiElement(
+                                "Har du hatt en varig endring i noen av arbeidsforholdene," +
+                                    " virksomhetene eller arbeidssituasjonen din de siste fire årene?",
+                                "Ja",
+                            )
+                            lagVerdiElement("Dato for når varig endring:", varigEndring.dato)
+                            lagVerdiElement("Næringsinntekt etter endringen", varigEndring.inntektEtterEndring)
+                            lagVerdiElement("Beskrivelse av endring", varigEndring.forklaring)
+                        },
+                        lagVerdiElement(
+                            "Har du begynt i arbeidslivet i løpet av de 3 siste ferdigliknede årene?",
+                            selvstendigNæringsdrivende.virksomhet.yrkesaktivSisteTreFerdigliknedeÅrene?.let {
+                                "Ja, ble yrkesaktiv ${it.oppstartsdato}"
+                            } ?: "Nei",
+                        ),
+                        lagVerdiElement(
+                            "Har du regnskapsfører?",
+                            selvstendigNæringsdrivende.virksomhet.regnskapsfører?.let {
+                                "Ja, ${it.navn}, telefon: ${it.telefon}"
+                            } ?: "Nei",
+                        ),
+                        lagVerdiElement(
+                            "Har du flere enn én næringsvirksomhet som er aktiv?",
+                            konverterBooleanTilSvar(selvstendigNæringsdrivende.virksomhet.harFlereAktiveVirksomheter),
+                        ),
                     ),
-                ),
+            )
+        } ?: lagVerdiElement(
+            "Selvstendig næringsdrivende",
+            "Har ikke vært selvstending næringsdrivende i perioden det søkes om.",
         )
+
+    fun mapOpptjeningIUtlandet(opptjeningIUtlandet: List<OpptjeningIUtlandet>): VerdilisteElement =
+        opptjeningIUtlandet.takeIf { it.isNotEmpty() }?.let {
+            VerdilisteElement(
+                label =
+                    "Har jobbet som arbeidstaker eller frilanser i et " +
+                        "annet EØS-land i løpet av de 3 siste månedene før perioden en søker om?",
+                visningsVariant = "PUNKTLISTE",
+                verdiliste =
+                    opptjeningIUtlandet.map { opptjeningIUtlandet ->
+                        VerdilisteElement(
+                            label =
+                                "Jobbet i ${opptjeningIUtlandet.land.landnavn} som ${opptjeningIUtlandet.opptjeningType.pdfTekst}" +
+                                    " hos ${opptjeningIUtlandet.navn} ${opptjeningIUtlandet.fraOgMed} - ${opptjeningIUtlandet.tilOgMed}",
+                        )
+                    },
+            )
+        } ?: VerdilisteElement(label = "Nei")
+
+    fun jobbISøknadsPerioden(søknad: PilsSøknadMottatt): VerdilisteElement {
+        val ingenArbeidsforholdRegistrert: Boolean = søknad.arbeidsgivere.isEmpty()
+        val arbeidsgivere: List<Arbeidsgiver> = søknad.arbeidsgivere
+        val frilansArbeidsforhold: Arbeidsforhold? = søknad.frilans?.arbeidsforhold
+        return VerdilisteElement(
+            label = "Jobb i søknadsperioden",
+            verdiliste =
+                listOfNotNull(
+                    ingenArbeidsforholdRegistrert.takeIf { it }?.let {
+                        lagVerdiElement(
+                            "Har du jobbet i perioden?",
+                            "Ingen arbeidsforhold er registrert i søknadsperioden",
+                        )
+                    },
+                ) +
+                    arbeidsgivere.map { arbeidsgiver ->
+                        VerdilisteElement(
+                            label =
+                                arbeidsgiver.navn + " Orgnr: " +
+                                    arbeidsgiver.organisasjonsnummer,
+                            verdiliste = listOf(
+                                arbeidsgiver.arbeidsforhold.arbeidIPeriode.
+                            ),
+                        )
+                    },
+        )
+    }
 
     fun formaterDatoer(dagerMedPleie: List<LocalDate>): PleieDager =
         PleieDager(
