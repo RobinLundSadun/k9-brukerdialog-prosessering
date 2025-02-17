@@ -182,7 +182,7 @@ class PilsSøknadPdfData(
 
     private fun List<Enkeltdag>.grupperPerUke() = groupBy { it.dato.ukeNummer() }
 
-    private fun List<Enkeltdag>.grupperPerMåned() = groupBy { it.dato.month }
+    fun List<Enkeltdag>.grupperPerMåned() = groupBy { it.dato.month }
 
     fun List<Enkeltdag>.somMapPerMnd(): List<Map<String, Any>> {
         val perMåned: Map<Month, List<Enkeltdag>> = grupperPerMåned()
@@ -319,10 +319,87 @@ fun Map<Int, List<LocalDate>>.grupperSammenhengendeDatoerPerUkeTypet(): List<Per
         )
     }
 
+data class EnkeltdagTypet(
+    val dato: String,
+    val dag: String,
+    val tid: String,
+)
+
+data class ArbeidIPeriodeType(
+    val jobberIPerioden: String,
+    val enkeltdagerPerMnd: List<Måned>?,
+)
+
+data class EnkeltDagPeruke(
+    val uke: Int,
+    val dager: List<EnkeltdagTypet>,
+)
+
+data class Måned(
+    val år: Int,
+    val måned: String,
+    val enkeltdagerPerUke: List<EnkeltDagPeruke>,
+)
+
 data class Perioder(
     val uke: Int,
     val perioder: List<String>,
 )
+
+data class ArbeidsForholdTypet(
+    val jobberNormaltTimer: Double,
+    val arbeidIPeriode: ArbeidIPeriodeType,
+)
+
+fun mapArbeidsforholdTilType(arbeidsforhold: Arbeidsforhold): ArbeidsForholdTypet =
+    ArbeidsForholdTypet(
+        arbeidsforhold.jobberNormaltTimer,
+        arbeidsforhold.arbeidIPeriode.somMapTypet(),
+    )
+
+private fun ArbeidIPeriode.somMapTypet(): ArbeidIPeriodeType =
+    ArbeidIPeriodeType(
+        jobberIPerioden.pdfTekst,
+        enkeltdager?.somMapPerMndTypet(),
+    )
+
+private fun List<Enkeltdag>.somMapPerMndTypet(): List<Måned> {
+    val perMåned: Map<Month, List<Enkeltdag>> = grupperPerMåned()
+
+    return perMåned.map {
+        Måned(
+            år =
+                it.value
+                    .first()
+                    .dato.year,
+            måned = it.key.somNorskMåned().capitalizeName(),
+            enkeltdagerPerUke = it.value.somMapPerUke(),
+        )
+    }
+}
+
+private fun List<Enkeltdag>.somMapPerUke(): List<EnkeltDagPeruke> {
+    val perUke = grupperPerUke()
+    return perUke.map {
+        EnkeltDagPeruke(
+            it.key,
+            it.value.somMapEnkeltdagTypet(),
+        )
+    }
+}
+
+private fun List<Enkeltdag>.somMapEnkeltdagTypet(): List<EnkeltdagTypet> =
+    this.map {
+        EnkeltdagTypet(
+            DATE_FORMATTER.format(it.dato),
+            it.dato.dayOfWeek.somNorskDag(),
+            it.tid.somTekst(avkort = false),
+        )
+    }
+
+fun List<Enkeltdag>.grupperPerUke() = groupBy { it.dato.ukeNummer() }
+
+fun List<Enkeltdag>.grupperPerMåned() = groupBy { it.dato.month }
 
 private fun beskrivInterval(interval: LocalDateInterval): String =
     when (interval.days()) {

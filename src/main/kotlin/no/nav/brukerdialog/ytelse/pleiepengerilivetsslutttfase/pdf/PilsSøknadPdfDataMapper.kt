@@ -7,17 +7,22 @@ import no.nav.brukerdialog.common.FeltMap
 import no.nav.brukerdialog.common.PdfConfig
 import no.nav.brukerdialog.common.VerdilisteElement
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.Perioder
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.PilsSøknadPdfData
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Arbeidsforhold
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Arbeidsgiver
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Bosted
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.FlereSokereSvar
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Frilans
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Medlemskap
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Næringstype
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.OpptjeningIUtlandet
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.PilsSøknadMottatt
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.Pleietrengende
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.SelvstendigNæringsdrivende
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.UtenlandskNæring
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.domene.capitalizeName
 import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.grupperSammenhengendeDatoerPerUkeTypet
+import no.nav.brukerdialog.meldinger.pleiepengerilivetsslutttfase.mapArbeidsforholdTilType
 import no.nav.brukerdialog.meldinger.pleiepengersyktbarn.domene.felles.Periode
 import no.nav.brukerdialog.utils.DateUtils.grupperMedUker
 import no.nav.brukerdialog.utils.DateUtils.somNorskDag
@@ -49,6 +54,11 @@ object PilsSøknadPdfDataMapper {
         val frilans = mapFrilans(søknad.frilans)
         val selvstendigNaeringsdrivende = mapSelvstendigNæringsdrivende(søknad.selvstendigNæringsdrivende)
         val opptjeningIUtlandet = mapOpptjeningIUtlandet(søknad.opptjeningIUtlandet)
+
+        val pilsSøknadPdfData =
+            PilsSøknadPdfData(
+                søknad,
+            )
 
         return FeltMap(
             label = ytelseTittel,
@@ -152,9 +162,7 @@ object PilsSøknadPdfDataMapper {
                                             listOfNotNull(
                                                 lagVerdiElement(
                                                     "Opphold i ${opphold.landnavn}",
-                                                    "${DATE_FORMATTER.format(
-                                                        opphold.fraOgMed,
-                                                    )} - ${DATE_FORMATTER.format(opphold.tilOgMed)}",
+                                                    mapPeriodeTilString(opphold.fraOgMed, opphold.tilOgMed),
                                                 ),
                                             )
                                         }
@@ -230,7 +238,6 @@ object PilsSøknadPdfDataMapper {
                                             verdi =
                                                 elseIfSvar(
                                                     frilans.jobberFortsattSomFrilans,
-                                                    "Ja",
                                                     "Nei, Sluttet som frilanser ${frilans.sluttdato}",
                                                 ),
                                         ),
@@ -295,7 +302,7 @@ object PilsSøknadPdfDataMapper {
                                                         it,
                                                     )
                                                 }
-                                                    ?: ""
+                                                    ?: "(Pågående)"
                                             ),
                                     ),
                                     lagVerdiElement(
@@ -398,11 +405,167 @@ object PilsSøknadPdfDataMapper {
                             label =
                                 arbeidsgiver.navn + " Orgnr: " +
                                     arbeidsgiver.organisasjonsnummer,
-                            verdiliste = listOf(
-                                arbeidsgiver.arbeidsforhold.arbeidIPeriode.
-                            ),
+                            verdiliste = arbeidsForholdMapper(arbeidsgiver.arbeidsforhold),
+                        )
+                    } +
+                    VerdilisteElement(
+                        label = "Frilans",
+                        verdiliste = arbeidsForholdMapper(frilansArbeidsforhold),
+                    ) +
+                    VerdilisteElement(
+                        label = "Selvstendig næringsdrivende",
+                        verdiliste = arbeidsForholdMapper(søknad.selvstendigNæringsdrivende?.arbeidsforhold),
+                    ),
+        )
+    }
+
+    fun arbeidsForholdMapper(arbeidsForhold: Arbeidsforhold?): List<VerdilisteElement> {
+        arbeidsForhold ?: return listOfNotNull(VerdilisteElement(label = "Ikke registrert"))
+        val arbeidsForholdTypet = mapArbeidsforholdTilType(arbeidsForhold)
+        return listOfNotNull(
+            VerdilisteElement(
+                label = arbeidsForholdTypet.arbeidIPeriode.jobberIPerioden,
+                visningsVariant = "PUNKTLISTE",
+                verdiliste =
+                    arbeidsForholdTypet.arbeidIPeriode.enkeltdagerPerMnd?.map { enkeltdag ->
+                        VerdilisteElement(
+                            label = enkeltdag.måned + " " + enkeltdag.år,
+                            visningsVariant = "PUNKTLISTE",
+                            verdiliste =
+                                enkeltdag.enkeltdagerPerUke.flatMap { enkeltdagPerUke ->
+                                    enkeltdagPerUke.dager.map { dag ->
+                                        VerdilisteElement(
+                                            label = "${dag.dag} ${dag.dato}: ${dag.tid}",
+                                        )
+                                    }
+                                },
                         )
                     },
+            ),
+        )
+    }
+
+    fun mapMedlemskap(medlemskap: Medlemskap): VerdilisteElement =
+        VerdilisteElement(
+            label = "Medlemskap i folketrygden",
+            verdiliste =
+                listOf(
+                    VerdilisteElement(
+                        label = "Har du bodd i utlandet de siste 12 månedene?",
+                        verdiliste =
+                            mapUtenlandsOpphold(
+                                medlemskap.harBoddIUtlandetSiste12Mnd,
+                                medlemskap.utenlandsoppholdSiste12Mnd,
+                            ),
+                    ),
+                    VerdilisteElement(
+                        label = "Skal du bo i utlandet de neste 12 månedene?",
+                        verdiliste =
+                            mapUtenlandsOpphold(
+                                medlemskap.skalBoIUtlandetNeste12Mnd,
+                                medlemskap.utenlandsoppholdNeste12Mnd,
+                            ),
+                    ),
+                ),
+        )
+
+    fun mapVerneplikt(harVærtEllerErVernepliktig: Boolean?): VerdilisteElement? =
+        harVærtEllerErVernepliktig?.let {
+            VerdilisteElement(
+                label = "Verneplikt",
+                verdiliste =
+                    listOfNotNull(
+                        lagVerdiElement(
+                            "Utøvde du verneplikt på tidspunktet du søker pleiepenger fra?",
+                            konverterBooleanTilSvar(harVærtEllerErVernepliktig),
+                        ),
+                    ),
+            )
+        }
+
+    fun mapUtlandskNæring(utenlandskNæring: List<UtenlandskNæring>): VerdilisteElement? =
+        VerdilisteElement(
+            label = "Utenlandsk næring",
+            verdiliste =
+                listOfNotNull(
+                    utenlandskNæring.takeIf { it.isNotEmpty() }?.let {
+                        VerdilisteElement(
+                            label = "Ja",
+                            visningsVariant = "PUNKTLISTE",
+                            verdiliste =
+                                utenlandskNæring.map { naering ->
+                                    VerdilisteElement(
+                                        label =
+                                            "${naering.navnPåVirksomheten.capitalizeName()} " +
+                                                mapPeriodeTilString(naering.fraOgMed, naering.tilOgMed),
+                                    )
+                                },
+                        )
+                    },
+                ),
+        )
+
+    fun mapUtenlandsOpphold(
+        check: Boolean,
+        utenlandsOpphold: List<Bosted>,
+    ): List<VerdilisteElement> =
+        listOf(
+            if (check) {
+                VerdilisteElement(
+                    label = "Ja",
+                    visningsVariant = "PUNKTLISTE",
+                    verdiliste =
+                        utenlandsOpphold.map { bosted ->
+                            VerdilisteElement(
+                                label =
+                                    "${bosted.landnavn} " +
+                                        "(${mapPeriodeTilString(bosted.fraOgMed, bosted.tilOgMed)})",
+                            )
+                        },
+                )
+            } else {
+                VerdilisteElement(label = "Nei")
+            },
+        )
+
+    fun mapVedlegg(søknad: PilsSøknadMottatt) {
+        val harLastetOppId = søknad.opplastetIdVedleggId.isNotEmpty()
+        val manglerNorskIdentitetsnummer = søknad.pleietrengende.norskIdentitetsnummer == null
+        val harLastetOppLegeerklæring = søknad.vedleggId.isNotEmpty()
+
+        val vedlegg =
+            VerdilisteElement(
+                label = "Vedlegg",
+                verdiliste =
+                    listOfNotNull(
+                        VerdilisteElement(
+                            label = "Har lastet opp kopi av ID til pleietrengende",
+                            verdi = konverterBooleanTilSvar(harLastetOppId),
+                        ),
+                        VerdilisteElement(
+                            label = "Har du lastet opp legeerklæring?",
+                            verdi = konverterBooleanTilSvar(harLastetOppLegeerklæring),
+                        ),
+                    ),
+            )
+    }
+
+    fun mapSamtykke(søknad: PilsSøknadMottatt): VerdilisteElement {
+        val harForståttRettigheterOgPlikter = søknad.harForståttRettigheterOgPlikter
+        val harBekreftetOpplysninger = søknad.harBekreftetOpplysninger
+        return VerdilisteElement(
+            label = "Samtykke fra deg",
+            verdiliste =
+                listOfNotNull(
+                    lagVerdiElement(
+                        "Har du forstått dine rettigheter og plikter?",
+                        konverterBooleanTilSvar(harForståttRettigheterOgPlikter),
+                    ),
+                    lagVerdiElement(
+                        "Har du bekreftet at opplysninger du har gitt er riktige?",
+                        konverterBooleanTilSvar(harBekreftetOpplysninger),
+                    ),
+                ),
         )
     }
 
@@ -435,13 +598,17 @@ object PilsSøknadPdfDataMapper {
                 ),
         )
 
+    fun mapPeriodeTilString(
+        fraOgMed: LocalDate?,
+        tilOgMed: LocalDate?,
+    ): String = "${DATE_FORMATTER.format(fraOgMed)} - ${DATE_FORMATTER.format(tilOgMed)}"
+
     private fun elseIfSvar(
         svar: Boolean,
-        svarTrue: String,
         svarFalse: String,
     ): String =
         if (svar) {
-            svarTrue
+            "Ja"
         } else {
             svarFalse
         }
